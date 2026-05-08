@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Processing Payment...</title>
+    <style>
+        body { font-family: sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; text-align: center; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #eee; border-top: 4px solid #635bff; border-radius: 50%; animation: spin 1s linear infinite; margin: 24px auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        p { color: #555; }
+    </style>
+</head>
+<body>
+    <h1>Processing your payment...</h1>
+    <div class="spinner"></div>
+    <p>Please wait while we prepare your checkout session.</p>
+    <p>Do not close this page.</p>
+
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const paymentId = params.get('id');
+
+        if (!paymentId) {
+            window.location.href = '/index.html';
+        }
+
+        async function poll() {
+            try {
+                const response = await fetch('/api/payments/' + paymentId);
+                if (!response.ok) {
+                    window.location.href = '/failure.html';
+                    return;
+                }
+                const data = await response.json();
+
+                if (data.state === 'FAILED') {
+                    window.location.href = '/failure.html';
+                    return;
+                }
+
+                if (data.sessionUrl) {
+                    window.location.href = data.sessionUrl;
+                    return;
+                }
+
+                // Not ready yet — poll again in 1 second
+                setTimeout(poll, 1000);
+            } catch (err) {
+                setTimeout(poll, 2000);
+            }
+        }
+
+        poll();
+    </script>
+</body>
+</html>
