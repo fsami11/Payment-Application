@@ -11,7 +11,7 @@ import java.util.UUID;
 
 public interface OutboxRepository extends JpaRepository<Outbox, UUID> {
 
-    @Query(value = "SELECT * FROM outbox WHERE published = false FOR UPDATE SKIP LOCKED",
+    @Query(value = "SELECT * FROM outbox WHERE published = false FOR UPDATE SKIP LOCKED LIMIT 10",
            nativeQuery = true)
     List<Outbox> findUnpublishedForUpdate();
 
