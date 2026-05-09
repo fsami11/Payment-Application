@@ -171,8 +171,3 @@ Four pages in `src/main/resources/static/`:
 - **Stripe session expiry (24h)** → if a payment stays in IN_PROGRESS beyond 24h, the session URL expires. Startup recovery should detect and mark such payments FAILED.
 - **Performance testing against real Stripe** → Stripe test mode has rate limits making load testing impractical against the real API. 
 
-## Open Questions
-
-- Should the processing page use Server-Sent Events instead of meta-refresh for smoother UX?
-- Should `checkout.session.async_payment_succeeded` and `checkout.session.async_payment_failed` also be handled for bank transfer payment methods?
-- What tool should be used for performance testing — Gatling, k6, or JMeter?
