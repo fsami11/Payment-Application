@@ -62,6 +62,12 @@
             <version>${stripe.version}</version>
         </dependency>
 
+        <!-- Gson (used by Stripe SDK internals, needed for FakeWebhookVerifier) -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+        </dependency>
+
         <!-- Validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

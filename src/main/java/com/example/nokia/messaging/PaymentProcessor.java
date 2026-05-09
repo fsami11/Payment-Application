@@ -3,17 +3,16 @@ package com.example.nokia.messaging;
 import com.example.nokia.config.RabbitMQConfig;
 import com.example.nokia.domain.Payment;
 import com.example.nokia.domain.PaymentState;
+import com.example.nokia.gateway.StripeGateway;
+import com.example.nokia.gateway.StripeSession;
 import com.example.nokia.service.PaymentService;
 import com.rabbitmq.client.Channel;
-import com.stripe.model.checkout.Session;
-import com.stripe.param.checkout.SessionCreateParams;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -29,16 +28,12 @@ public class PaymentProcessor {
 
     private final PaymentService paymentService;
     private final RabbitTemplate rabbitTemplate;
+    private final StripeGateway stripeGateway;
 
-    @Value("${stripe.success-url}")
-    private String successUrl;
-
-    @Value("${stripe.cancel-url}")
-    private String cancelUrl;
-
-    public PaymentProcessor(PaymentService paymentService, RabbitTemplate rabbitTemplate) {
+    public PaymentProcessor(PaymentService paymentService, RabbitTemplate rabbitTemplate, StripeGateway stripeGateway) {
         this.paymentService = paymentService;
         this.rabbitTemplate = rabbitTemplate;
+        this.stripeGateway = stripeGateway;
     }
 
     @RabbitListener(queues = RabbitMQConfig.QUEUE)
@@ -57,7 +52,6 @@ public class PaymentProcessor {
 
         Payment payment = optional.get();
 
-        // Idempotency check — skip if already processed
         if (payment.getState() != PaymentState.RECEIVED) {
             log.info("Payment {} already in state {} — ACKing without processing", paymentId, payment.getState());
             channel.basicAck(deliveryTag, false);
@@ -65,36 +59,12 @@ public class PaymentProcessor {
         }
 
         try {
-            SessionCreateParams params = SessionCreateParams.builder()
-                    .setMode(SessionCreateParams.Mode.PAYMENT)
-                    .addPaymentMethodType(SessionCreateParams.PaymentMethodType.CARD)
-                    .setSuccessUrl(successUrl + "?paymentId=" + paymentId)
-                    .setCancelUrl(cancelUrl + "?paymentId=" + paymentId)
-                    .addLineItem(SessionCreateParams.LineItem.builder()
-                            .setQuantity(1L)
-                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
-                                    .setCurrency(payment.getCurrency().toLowerCase())
-                                    .setUnitAmount(payment.getAmount()
-                                            .multiply(java.math.BigDecimal.valueOf(100))
-                                            .longValue())
-                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                            .setName("Payment")
-                                            .build())
-                                    .build())
-                            .build())
-                    .build();
+            StripeSession session = stripeGateway.createCheckoutSession(payment);
 
-            com.stripe.net.RequestOptions options = com.stripe.net.RequestOptions.builder()
-                    .setIdempotencyKey(paymentId.toString())
-                    .build();
-
-            Session session = Session.create(params, options);
-
-            // Write to DB before ACK — guarantees no response loss
-            paymentService.markInProgress(paymentId, session.getId(), session.getUrl());
+            paymentService.markInProgress(paymentId, session.id(), session.url());
 
             channel.basicAck(deliveryTag, false);
-            log.info("Payment {} moved to IN_PROGRESS with session {}", paymentId, session.getId());
+            log.info("Payment {} moved to IN_PROGRESS with session {}", paymentId, session.id());
 
         } catch (Exception e) {
             log.error("Failed to process payment {}", paymentId, e);
@@ -105,7 +75,6 @@ public class PaymentProcessor {
                 paymentService.markFailed(paymentId);
                 channel.basicNack(deliveryTag, false, false);
             } else {
-                // Re-publish with incremented retry count
                 MessageProperties props = new MessageProperties();
                 props.setHeader("x-retry-count", retryCount + 1);
                 Message retryMsg = new Message(message.getBody(), props);
