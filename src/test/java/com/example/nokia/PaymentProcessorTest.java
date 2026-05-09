@@ -20,7 +20,6 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,8 +58,6 @@ class PaymentProcessorTest {
     private Payment stubReceivedPayment(UUID paymentId) {
         Payment payment = mock(Payment.class);
         when(payment.getState()).thenReturn(PaymentState.RECEIVED);
-        when(payment.getAmount()).thenReturn(new BigDecimal("25.00"));
-        when(payment.getCurrency()).thenReturn("EUR");
         when(paymentService.findById(paymentId)).thenReturn(Optional.of(payment));
         return payment;
     }
@@ -69,7 +66,6 @@ class PaymentProcessorTest {
     void processPayment_receivedPayment_createsStripeSessionAndAcks() throws Exception {
         UUID paymentId = UUID.randomUUID();
         Payment payment = stubReceivedPayment(paymentId);
-        when(payment.getId()).thenReturn(paymentId);
 
         StripeSession session = new StripeSession("sess_test123", "https://checkout.stripe.com/test");
         when(stripeGateway.createCheckoutSession(payment)).thenReturn(session);
@@ -113,7 +109,6 @@ class PaymentProcessorTest {
     void processPayment_stripeFailure_firstAttempt_republishesWithRetryCount1AndAcks() throws Exception {
         UUID paymentId = UUID.randomUUID();
         Payment payment = stubReceivedPayment(paymentId);
-        when(payment.getId()).thenReturn(paymentId);
         when(stripeGateway.createCheckoutSession(payment)).thenThrow(new RuntimeException("Stripe unavailable"));
 
         processor.processPayment(messageFor(paymentId), channel);
@@ -129,7 +124,6 @@ class PaymentProcessorTest {
     void processPayment_stripeFailure_retriesExhausted_nacksAndMarksFailed() throws Exception {
         UUID paymentId = UUID.randomUUID();
         Payment payment = stubReceivedPayment(paymentId);
-        when(payment.getId()).thenReturn(paymentId);
         when(stripeGateway.createCheckoutSession(payment)).thenThrow(new RuntimeException("Stripe unavailable"));
 
         processor.processPayment(messageFor(paymentId, 3), channel);
