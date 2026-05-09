@@ -3,11 +3,13 @@ package com.example.nokia;
 import com.example.nokia.domain.Outbox;
 import com.example.nokia.domain.Payment;
 import com.example.nokia.domain.PaymentState;
+import com.example.nokia.messaging.OutboxRelay;
 import com.example.nokia.repository.OutboxRepository;
 import com.example.nokia.repository.PaymentRepository;
 import com.example.nokia.service.StartupRecoveryJob;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -15,6 +17,10 @@ import java.time.OffsetDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class StartupRecoveryTest extends BaseIntegrationTest {
+
+    // Suppress the relay so it cannot re-publish the outbox entry between recover() and the assertion
+    @MockitoBean
+    OutboxRelay outboxRelay;
 
     @Autowired
     PaymentRepository paymentRepository;

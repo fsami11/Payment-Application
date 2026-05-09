@@ -29,26 +29,40 @@ class PaymentProcessorIdempotencyTest extends BaseIntegrationTest {
         payment = paymentRepository.save(payment);
         UUID id = payment.getId();
 
-        // Simulates a re-delivered message trying to move a COMPLETED payment back to IN_PROGRESS
         paymentService.markInProgress(id, "sess_test", "https://stripe.com/test");
 
         Payment reloaded = paymentRepository.findById(id).orElseThrow();
-        // State should remain COMPLETED — markInProgress only sets IN_PROGRESS on RECEIVED payments
+        assertThat(reloaded.getState()).isEqualTo(PaymentState.COMPLETED);
         assertThat(reloaded.getStripeSessionUrl()).isNull();
     }
 
     @Test
-    void findById_returnsSessionUrl_whenInProgress() {
+    void markFailed_doesNotOverwriteCompletedState() {
         Payment payment = new Payment();
-        payment.setAmount(new BigDecimal("99.99"));
-        payment.setCurrency("GBP");
-        payment.setState(PaymentState.IN_PROGRESS);
-        payment.setStripeSessionId("sess_abc");
-        payment.setStripeSessionUrl("https://checkout.stripe.com/abc");
+        payment.setAmount(new BigDecimal("15.00"));
+        payment.setCurrency("EUR");
+        payment.setState(PaymentState.COMPLETED);
         payment = paymentRepository.save(payment);
+        UUID id = payment.getId();
 
-        var found = paymentService.findById(payment.getId());
-        assertThat(found).isPresent();
-        assertThat(found.get().getStripeSessionUrl()).isEqualTo("https://checkout.stripe.com/abc");
+        paymentService.markFailed(id, "{}");
+
+        Payment reloaded = paymentRepository.findById(id).orElseThrow();
+        assertThat(reloaded.getState()).isEqualTo(PaymentState.COMPLETED);
+    }
+
+    @Test
+    void markCompleted_doesNotOverwriteFailedState() {
+        Payment payment = new Payment();
+        payment.setAmount(new BigDecimal("15.00"));
+        payment.setCurrency("EUR");
+        payment.setState(PaymentState.FAILED);
+        payment = paymentRepository.save(payment);
+        UUID id = payment.getId();
+
+        paymentService.markCompleted(id, "{}");
+
+        Payment reloaded = paymentRepository.findById(id).orElseThrow();
+        assertThat(reloaded.getState()).isEqualTo(PaymentState.FAILED);
     }
 }
