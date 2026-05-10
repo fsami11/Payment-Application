@@ -141,7 +141,7 @@ The `design.md` in that directory documents all architectural decisions and alte
 
 ```bash
 git clone <repo-url>
-cd Nokia
+cd Payment-Application
 ```
 
 ### 2. Configure environment variables
@@ -279,6 +279,18 @@ The relay runs a single `@Transactional` that spans both the `SELECT FOR UPDATE 
 On failure, the consumer immediately republishes the message with an incremented `x-retry-count` and ACKs the original. With `MAX_RETRIES = 3` and no delay, all three retries fire within milliseconds. If Stripe is rate-limiting or briefly unavailable, the retries hit the same condition in rapid succession, exhaust the count, and the payment is marked `FAILED` before the underlying issue has had any chance to resolve.
 
 **Fix:** Introduce a TTL-based retry queue that dead-letters back to the main queue. On failure, a single `basicNack` routes the message into the retry queue where it waits out the TTL before being redelivered, giving transient conditions time to resolve.
+
+**3. Connection overhead from three direct app-to-DB pools**
+
+Each app instance maintains its own HikariCP connection pool talking directly to PostgreSQL. Under load, all three pools compete for DB connections simultaneously. PostgreSQL forks a backend process per connection, so 3 instances × pool size connections means the DB is spending a non-trivial share of its resources on connection management rather than query execution.
+
+**Fix:** Add PgBouncer in transaction pooling mode between the app instances and PostgreSQL. All three instances connect to PgBouncer, which multiplexes them onto a much smaller set of real server connections. DB backends are only occupied for the duration of a transaction, not the lifetime of an app-side connection.
+
+**4. Polling reads compete with writes on the primary**
+
+The processing page polls `GET /api/payments/{id}` via meta-refresh until `session_url` is set — several reads per payment, all hitting the same primary that handles every write. Under load, read traffic consumes connections and I/O the primary needs for writes.
+
+**Fix:** Add a PostgreSQL read replica and route `@Transactional(readOnly = true)` queries there via a routing datasource. The polling endpoint reads a single row by primary key with no write side effects — offloading it is the highest-leverage change for closing the gap between the observed 2.3x and the theoretical 3x throughput scaling.
 
 ---
 
